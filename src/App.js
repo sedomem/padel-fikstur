@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Users, Play, RotateCcw, Shuffle, Check, Plus, Trash2, X, AlertCircle, Lock, LogOut, Cloud, CloudOff, Loader2, Save, Edit3 } from 'lucide-react';
+import { Trophy, Users, Play, RotateCcw, Shuffle, Check, Plus, Trash2, X, AlertCircle, Lock, LogOut, Cloud, CloudOff, Loader2, Settings2, Edit3, Save } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -23,7 +23,7 @@ const appId = "padel-tourney-v1";
 const CATEGORIES = ['Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
 
 const App = () => {
-  // --- DURUM YÖNETİMİ ---
+  // --- STATE TANIMLAMALARI ---
   const [userRole, setUserRole] = useState(null); 
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -42,20 +42,21 @@ const App = () => {
 
   const sampleTeams = ["Ali & Veli", "Ayşe & Fatma", "Can & Cem", "Deniz & Derya", "Efe & Ege", "Gül & Nur", "Hasan & Hüseyin", "İrem & Sinem"];
 
-  // --- 1. OTURUM KALICILIĞI (SAYFA YENİLENSE DE ÇIKMAZ) ---
+  // --- OTURUM VE VERİ SENKRONİZASYONU ---
+  
   useEffect(() => {
+    // Tarayıcıdan oturumu hatırla
     const savedRole = localStorage.getItem('padel_user_role');
     if (savedRole) setUserRole(savedRole);
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        try { await signInAnonymously(auth); } catch (e) { console.error(e); }
+        try { await signInAnonymously(auth); } catch (e) { console.error("Oturum hatası:", e); }
       } else { setFbUser(user); }
     });
     return () => unsubscribe();
   }, []);
 
-  // --- 2. CANLI VERİ SENKRONİZASYONU ---
   useEffect(() => {
     if (!fbUser) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournamentState', 'main');
@@ -76,14 +77,14 @@ const App = () => {
     return () => unsubscribe();
   }, [fbUser]);
 
-  // --- 3. FONKSİYONLAR ---
+  // --- FONKSİYONLAR ---
 
   const syncToCloud = async (updates) => {
     if (userRole !== 'admin') return;
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournamentState', 'main');
       await setDoc(docRef, updates, { merge: true });
-    } catch (e) { console.error("Sync error:", e); }
+    } catch (e) { console.error("Cloud sync hatası:", e); }
   };
 
   const handleLogin = (e) => {
@@ -93,7 +94,7 @@ const App = () => {
       localStorage.setItem('padel_user_role', 'admin');
       setLoginError('');
     } else {
-      setLoginError('Hatalı giriş bilgileri!');
+      setLoginError('Bilgiler hatalı!');
     }
   };
 
@@ -237,19 +238,20 @@ const App = () => {
       }
     };
     clearRec(rIdx, mIdx);
+    const updatedChamps = { ...champions, [category]: null };
     setBrackets(newBrackets);
-    setChampions({ ...champions, [category]: null });
+    setChampions(updatedChamps);
     setScoreModal({ isOpen: false });
-    syncToCloud({ brackets: newBrackets, champions: { ...champions, [category]: null } });
+    syncToCloud({ brackets: newBrackets, champions: updatedChamps });
   };
 
-  // --- UI BİLEŞENLERİ ---
+  // --- UI RENDERING ---
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-3" />
-        <p className="text-emerald-100 font-bold uppercase tracking-widest text-[9px]">Yükleniyor...</p>
+        <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
+        <p className="text-emerald-100 font-bold uppercase tracking-widest text-[9px]">Sistem Yükleniyor...</p>
       </div>
     );
   }
@@ -257,20 +259,20 @@ const App = () => {
   if (!userRole) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm">
+        <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm border border-slate-200">
           <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg">
+            <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center shadow-lg rotate-3">
               <Trophy size={32} />
             </div>
           </div>
-          <h1 className="text-2xl font-black text-center text-slate-900 mb-6 uppercase italic">Padel Fikstür Pro</h1>
+          <h1 className="text-2xl font-black text-center text-slate-900 mb-6 uppercase tracking-tight italic">Padel Fikstür Pro</h1>
           <form onSubmit={handleLogin} className="space-y-4">
             {loginError && <div className="bg-red-50 text-red-600 text-[10px] p-2 rounded-lg text-center font-bold">{loginError}</div>}
             <input type="text" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-sm" placeholder="Kullanıcı Adı" />
             <input type="password" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-sm" placeholder="Şifre" />
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl shadow-lg transition-all text-xs tracking-widest">ADMİN GİRİŞİ</button>
+            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-4 rounded-xl shadow-lg transition-all active:scale-95 uppercase text-xs tracking-widest">GİRİŞ YAP</button>
           </form>
-          <button onClick={handleGuestLogin} className="w-full mt-4 bg-slate-900 hover:bg-black text-white font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all text-xs tracking-widest">
+          <button onClick={handleGuestLogin} className="w-full mt-4 bg-slate-900 hover:bg-black text-white font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all uppercase text-xs tracking-widest">
             <Users size={16} /> MİSAFİR OLARAK İZLE
           </button>
         </div>
@@ -283,7 +285,7 @@ const App = () => {
       <header className="bg-[#064e3b] text-white p-3 shadow-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Trophy className="text-yellow-400" size={18} />
+            <Trophy className="text-yellow-400" size={20} />
             <h1 className="font-black text-sm sm:text-base uppercase tracking-tighter italic">Padel Fikstür Pro</h1>
             <div className={`hidden sm:flex items-center gap-1.5 px-2 py-1 rounded text-[7px] font-black ${isConnected ? 'bg-emerald-400/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
               <Cloud size={10}/> <span>{isConnected ? 'CANLI' : '...'}</span>
@@ -307,27 +309,27 @@ const App = () => {
         </div>
 
         {phase === 'setup' && userRole === 'admin' ? (
-          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xl max-w-3xl mx-auto w-full">
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xl max-w-3xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-black text-slate-900 uppercase italic">Takım Kaydı</h2>
               <div className="flex gap-2">
-                <button onClick={fillRandom} className="px-3 py-1.5 text-[8px] font-black bg-slate-100 rounded-lg flex items-center gap-1 uppercase tracking-widest shadow-sm"><Shuffle size={12}/> Rastgele</button>
-                <button onClick={addTeam} className="px-3 py-1.5 text-[8px] font-black bg-emerald-50 text-emerald-700 rounded-lg flex items-center gap-1 uppercase tracking-widest shadow-sm"><Plus size={12}/> Ekle</button>
+                <button onClick={fillRandom} className="px-3 py-1.5 text-[8px] font-black bg-slate-100 rounded-lg flex items-center gap-1 uppercase shadow-sm"><Shuffle size={12}/> Rastgele</button>
+                <button onClick={addTeam} className="px-3 py-1.5 text-[8px] font-black bg-emerald-50 text-emerald-700 rounded-lg flex items-center gap-1 uppercase shadow-sm"><Plus size={12}/> Ekle</button>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 max-h-[300px] overflow-y-auto pr-2">
               {(teams[activeCategory] || []).map((team, index) => (
                 <div key={index} className="group bg-slate-50 border border-slate-100 p-2 rounded-lg flex items-center gap-2 shadow-sm">
-                  <span className="w-5 text-[9px] font-black text-slate-300">{index + 1}</span>
+                  <span className="w-5 text-[9px] font-black text-slate-300">#{index + 1}</span>
                   <input type="text" value={team} onChange={(e) => handleNameChange(index, e.target.value)} className="flex-grow bg-transparent font-bold text-slate-800 outline-none text-xs" placeholder="Takım Adı" />
-                  <button onClick={() => removeTeam(index)} className="p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
+                  <button onClick={() => removeTeam(index)} className="p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14}/></button>
                 </div>
               ))}
             </div>
-            <button onClick={startTournament} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-widest italic"><Play size={16} fill="currentColor"/> Fikstürü Oluştur</button>
+            <button onClick={startTournament} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-widest italic active:scale-95 transition-all"><Play size={16} fill="currentColor"/> Fikstürü Oluştur</button>
           </div>
         ) : (
-          <div className="flex-grow overflow-x-auto bg-white border border-slate-200 rounded-2xl p-4 shadow-inner">
+          <div className="flex-grow overflow-x-auto bg-white border border-slate-200 rounded-2xl p-4 shadow-inner animate-in fade-in">
             {brackets?.[activeCategory] ? (
               <div className="flex gap-8 min-w-max h-full items-center px-2">
                 {brackets[activeCategory].map((round, rIdx) => (
@@ -364,45 +366,48 @@ const App = () => {
             ) : (
               <div className="flex flex-col items-center justify-center h-full min-h-[300px] text-slate-300">
                 <AlertCircle size={32} className="opacity-10 mb-2"/>
-                <p className="font-black text-[10px] uppercase tracking-widest text-center">Fikstür Hazırlanıyor...<br/><span className="font-normal opacity-60">Admin kurulumu tamamladığında canlı sonuçlar akacaktır.</span></p>
+                <p className="font-black text-[10px] uppercase tracking-widest text-center">Fikstür Hazırlanıyor...<br/><span className="font-normal opacity-60 uppercase">Yönetici kurulumu tamamladığında canlı yayın başlayacaktır.</span></p>
               </div>
             )}
           </div>
         )}
       </main>
 
-      {/* --- SKOR & DÜZENLEME MODAL --- */}
+      {/* --- MODALLAR --- */}
       {scoreModal.isOpen && scoreModal.matchData && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in duration-200">
             <div className="bg-[#064e3b] p-4 text-white flex justify-between items-center">
-              <h3 className="font-black uppercase text-xs italic">{scoreModal.editMode ? 'Takımları Düzenle' : 'Maç Sonucu'}</h3>
+              <h3 className="font-black uppercase text-xs italic tracking-widest">{scoreModal.editMode ? 'Takımları Düzenle' : 'Maç Sonucu'}</h3>
               <button onClick={() => setScoreModal({ ...scoreModal, isOpen: false })}><X size={18}/></button>
             </div>
             <div className="p-6 space-y-6">
                {[ {n: scoreModal.matchData.t1, id: 't1'}, {n: scoreModal.matchData.t2, id: 't2'} ].map(side => (
                  <div key={side.id} className="space-y-2 text-center">
                    {scoreModal.editMode ? (
-                     <input type="text" value={side.n} onChange={(e) => {
-                       const b = {...brackets}; b[activeCategory][scoreModal.rIdx][scoreModal.mIdx][side.id] = e.target.value; setBrackets({...b});
-                     }} className="w-full p-2.5 bg-slate-50 border rounded-lg font-bold text-xs outline-none focus:ring-1 focus:ring-emerald-500" />
+                     <div className="text-left space-y-1">
+                       <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Takım İsmi</label>
+                       <input type="text" value={side.n} onChange={(e) => {
+                         const b = {...brackets}; b[activeCategory][scoreModal.rIdx][scoreModal.mIdx][side.id] = e.target.value; setBrackets({...b});
+                       }} className="w-full p-2.5 bg-slate-50 border rounded-lg font-bold text-xs outline-none focus:ring-1 focus:ring-emerald-500" />
+                     </div>
                    ) : (
                      <>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{side.n}</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate px-4">{side.n}</p>
                         <input type="number" value={scoreModal.matchData.scores[0][side.id]} onChange={(e) => {
                           const b = {...brackets}; b[activeCategory][scoreModal.rIdx][scoreModal.mIdx].scores[0][side.id] = e.target.value; setBrackets({...b});
-                        }} className="w-16 text-center p-2 bg-slate-50 border rounded-xl font-black text-xl text-emerald-700" />
+                        }} className="w-16 text-center p-2 bg-slate-50 border rounded-xl font-black text-xl text-emerald-700 shadow-inner" />
                      </>
                    )}
                  </div>
                ))}
                <div className="space-y-2 pt-2 border-t">
-                  <button onClick={() => scoreModal.editMode ? syncToCloud({ brackets }) : handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-lg text-[9px] tracking-widest flex items-center justify-center gap-2">
-                    {scoreModal.editMode ? <Save size={12}/> : null} {scoreModal.editMode ? 'DEĞİŞİKLİKLERİ KAYDET' : 'SKORU KAYDET VE YAYINLA'}
+                  <button onClick={() => scoreModal.editMode ? syncToCloud({ brackets }) : handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-lg text-[9px] tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
+                    {scoreModal.editMode ? <Save size={12}/> : null} {scoreModal.editMode ? 'KAYDET' : 'SKORU KAYDET VE YAYINLA'}
                   </button>
                   <div className="flex gap-2">
                     <button onClick={() => setScoreModal({ ...scoreModal, editMode: !scoreModal.editMode })} className="flex-1 bg-slate-100 text-slate-600 font-bold py-2 rounded-lg text-[8px] uppercase flex items-center justify-center gap-1">
-                      {scoreModal.editMode ? <X size={12}/> : <Edit3 size={12}/>} {scoreModal.editMode ? 'İptal' : 'İsimleri Düzenle'}
+                      {scoreModal.editMode ? <X size={12}/> : <Edit3 size={12}/>} {scoreModal.editMode ? 'İptal' : 'Düzenle'}
                     </button>
                     {!scoreModal.editMode && (
                       <button onClick={() => clearMatch(scoreModal.rIdx, scoreModal.mIdx, activeCategory)} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-lg text-[8px] uppercase flex items-center justify-center gap-1">
@@ -416,16 +421,15 @@ const App = () => {
         </div>
       )}
 
-      {/* --- SIFIRLAMA MODAL --- */}
       {resetModal.isOpen && (
         <div className="fixed inset-0 bg-red-950/90 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in duration-200">
-            <h3 className="font-black uppercase text-sm text-red-600 mb-4 text-center">TÜMÜNÜ SIFIRLA</h3>
-            <p className="text-[10px] font-bold text-slate-500 mb-4 text-center">Tüm kategorileri silmek için '1234' giriniz.</p>
-            <input type="password" value={resetModal.password} onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} className={`w-full text-center p-3 bg-slate-50 border-2 rounded-xl font-black text-xl mb-4 ${resetModal.error ? 'border-red-500' : 'border-slate-100'}`} placeholder="****" />
+            <h3 className="font-black uppercase text-sm text-red-600 mb-4 text-center tracking-widest italic">TÜMÜNÜ SIFIRLA</h3>
+            <p className="text-[10px] font-bold text-slate-500 mb-4 text-center leading-relaxed">Verileri temizlemek için '1234' giriniz.</p>
+            <input type="password" value={resetModal.password} onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} className={`w-full text-center p-3 bg-slate-50 border-2 rounded-xl font-black text-xl mb-4 ${resetModal.error ? 'border-red-500' : 'border-slate-100 focus:border-red-600'}`} placeholder="****" />
             <div className="flex gap-2">
-              <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="flex-1 bg-slate-100 font-black py-3 rounded-xl text-[10px]">İPTAL</button>
-              <button onClick={handleGlobalReset} className="flex-1 bg-red-600 text-white font-black py-3 rounded-xl text-[10px] shadow-lg">ONAYLA</button>
+              <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="flex-1 bg-slate-100 font-black py-3 rounded-xl text-[10px] uppercase">İPTAL</button>
+              <button onClick={handleGlobalReset} className="flex-1 bg-red-600 text-white font-black py-3 rounded-xl text-[10px] shadow-lg uppercase active:scale-95 transition-all">ONAYLA</button>
             </div>
           </div>
         </div>
