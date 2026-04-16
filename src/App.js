@@ -4,7 +4,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// --- FIREBASE YAPILANDIRMASI ---
+// --- FIREBASE YAPILANDIRMASI (image_ce06a4.png'den alınan bilgiler) ---
 const firebaseConfig = {
   apiKey: "AIzaSyDGwLbn64sA3sUhJ8kiT_zr-2dsKSzpN_8",
   authDomain: "padel-fikstur.firebaseapp.com",
@@ -15,6 +15,7 @@ const firebaseConfig = {
   measurementId: "G-CE61VW0HJ3"
 };
 
+// Firebase Servislerini Başlat
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -23,8 +24,8 @@ const appId = "padel-tourney-v1";
 const CATEGORIES = ['Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
 
 const App = () => {
-  // --- DURUM YÖNETİMİ ---
-  const [userRole, setUserRole] = useState(null); 
+  // --- DURUM YÖNETİMİ (STATE) ---
+  const [userRole, setUserRole] = useState(null); // 'admin', 'guest' veya null
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [fbUser, setFbUser] = useState(null);
@@ -40,35 +41,51 @@ const App = () => {
   const [scoreModal, setScoreModal] = useState({ isOpen: false, category: null, rIdx: null, mIdx: null, matchData: null });
   const [resetModal, setResetModal] = useState({ isOpen: false, password: '', error: '' });
 
-  const sampleTeams = ["Ali & Veli", "Ayşe & Fatma", "Can & Cem", "Deniz & Derya", "Efe & Ege", "Gül & Nur", "Hasan & Hüseyin", "İrem & Sinem", "Kaan & Mert", "Arda & Enes", "Buse & Pelin", "Emre & Melis"];
+  const sampleTeams = ["Ali & Veli", "Ayşe & Fatma", "Can & Cem", "Deniz & Derya", "Efe & Ege", "Gül & Nur", "Hasan & Hüseyin", "İrem & Sinem", "Kaan & Mert", "Polat & Memati", "Burak & Volkan", "Selin & Pelin"];
 
-  // --- TEMEL FONKSİYONLAR (Hataları Önlemek İçin En Üstte) ---
-  
+  // --- FONKSİYONLAR ---
+
+  // Bulut Veri Senkronizasyonu
   const syncToCloud = async (updates) => {
     if (userRole !== 'admin') return;
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournamentState', 'main');
       await setDoc(docRef, updates, { merge: true });
-    } catch (e) { console.error("Bulut senkronizasyon hatası:", e); }
+    } catch (e) {
+      console.error("Cloud güncelleme hatası:", e);
+    }
   };
 
+  // Giriş Yapma
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (loginData.username === 'Admin' && loginData.password === 'Admin19.!') {
+      setUserRole('admin');
+      setLoginError('');
+    } else {
+      setLoginError('Kullanıcı adı veya şifre hatalı!');
+    }
+  };
+
+  // Çıkış Yapma
   const handleLogout = () => {
     setUserRole(null);
     setLoginData({ username: '', password: '' });
+    setLoginError('');
   };
 
+  // Rastgele Doldurma
   const fillRandom = () => {
     if (userRole !== 'admin') return;
-    // Mevcut listeyi karıştır ve ilk 8 ismi al
     const shuffled = [...sampleTeams].sort(() => 0.5 - Math.random());
     const randomSelection = shuffled.slice(0, 8);
-    
     const newTeams = { ...teams };
     newTeams[activeCategory] = randomSelection;
     setTeams(newTeams);
     syncToCloud({ teams: newTeams });
   };
 
+  // Takım İsmi Değişimi
   const handleNameChange = (index, value) => {
     if (userRole !== 'admin') return;
     const newTeams = { ...teams };
@@ -78,6 +95,7 @@ const App = () => {
     syncToCloud({ teams: newTeams });
   };
 
+  // Yeni Takım Ekleme
   const addTeam = () => {
     if (userRole !== 'admin') return;
     const newTeams = { ...teams };
@@ -87,6 +105,7 @@ const App = () => {
     syncToCloud({ teams: newTeams });
   };
 
+  // Takım Silme
   const removeTeam = (index) => {
     if (userRole !== 'admin') return;
     const newTeams = { ...teams };
@@ -95,6 +114,7 @@ const App = () => {
     syncToCloud({ teams: newTeams });
   };
 
+  // Tüm Sistemi Sıfırlama
   const handleGlobalReset = () => {
     if (resetModal.password === '1234') {
       const emptyBrackets = { 'Çift Erkekler': null, 'Çift Kadınlar': null, 'Mix Çiftler': null };
@@ -106,12 +126,11 @@ const App = () => {
       syncToCloud({ phase: 'setup', brackets: emptyBrackets, champions: emptyBrackets, teams: emptyTeams });
       setResetModal({ isOpen: false, password: '', error: '' });
     } else {
-      setResetModal({ ...resetModal, error: 'Şifre Hatalı!' });
+      setResetModal({ ...resetModal, error: 'Sıfırlama şifresi hatalı!' });
     }
   };
 
-  // --- TURNAVA MANTIĞI ---
-
+  // Fikstür Oluşturma Mantığı
   const generateInitialBracket = (validTeams) => {
     const P = Math.pow(2, Math.ceil(Math.log2(validTeams.length)));
     const numMatchesRound0 = P / 2;
@@ -219,17 +238,18 @@ const App = () => {
     return (
       <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center p-4">
         <Loader2 className="w-16 h-16 text-emerald-400 animate-spin mb-6" />
-        <p className="text-emerald-100 font-black uppercase tracking-[0.3em] text-xs">Sistem Hazırlanıyor</p>
+        <p className="text-emerald-100 font-black uppercase tracking-[0.3em] text-xs">Sistem Yükleniyor</p>
       </div>
     );
   }
 
+  // GİRİŞ EKRANI
   if (!userRole) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md transform transition-all hover:scale-[1.02] duration-500">
+        <div className="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-md animate-in fade-in duration-700">
           <div className="flex justify-center mb-10">
-            <div className="w-24 h-24 bg-emerald-600 text-white rounded-[2rem] flex items-center justify-center shadow-xl rotate-6 animate-in zoom-in duration-700">
+            <div className="w-24 h-24 bg-emerald-600 text-white rounded-[2rem] flex items-center justify-center shadow-xl rotate-6 animate-in zoom-in duration-500">
               <Trophy size={56} />
             </div>
           </div>
@@ -243,10 +263,10 @@ const App = () => {
               <input type="text" value={loginData.username} onChange={e => setLoginData({...loginData, username: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-emerald-500 outline-none font-bold transition-all" placeholder="Admin" />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Şifre</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2">Giriş Anahtarı</label>
               <input type="password" value={loginData.password} onChange={e => setLoginData({...loginData, password: e.target.value})} className="w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl focus:border-emerald-500 outline-none font-bold transition-all" placeholder="••••••••" />
             </div>
-            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 transition-all active:scale-95 uppercase tracking-widest text-xs">Oturum Aç</button>
+            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-emerald-200 transition-all active:scale-95 uppercase tracking-widest text-xs">Sisteme Giriş Yap</button>
           </form>
 
           <div className="mt-8 pt-8 border-t border-slate-100">
@@ -272,7 +292,7 @@ const App = () => {
               <h1 className="font-black text-xl uppercase tracking-tighter leading-none italic">Padel Fikstür Pro</h1>
               <div className="flex items-center gap-2 mt-1.5">
                 <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`}></span>
-                <span className="text-[9px] font-black opacity-60 tracking-widest uppercase">{isConnected ? 'Canlı' : 'Çevrimdışı'}</span>
+                <span className="text-[9px] font-black opacity-60 tracking-widest uppercase">{isConnected ? 'Canlı' : 'Bağlantı Bekleniyor'}</span>
               </div>
             </div>
           </div>
@@ -282,8 +302,8 @@ const App = () => {
                <span className="text-[11px] font-black uppercase text-emerald-300">{userRole === 'admin' ? 'Yönetici' : 'İzleyici'}</span>
              </div>
              {userRole === 'admin' && (
-               <button onClick={() => setResetModal({ ...resetModal, isOpen: true })} className="p-3 bg-red-600/10 hover:bg-red-600 text-white rounded-xl transition-all group border border-red-500/20" title="Sistemi Sıfırla">
-                 <RotateCcw size={20} className="group-hover:rotate-180 transition-all duration-700"/>
+               <button onClick={() => setResetModal({ ...resetModal, isOpen: true })} className="p-3 bg-red-600/10 hover:bg-red-600 text-white rounded-xl transition-all group border border-red-500/20" title="Turnuvayı Sıfırla">
+                 <Settings2 size={20} className="group-hover:rotate-90 transition-all duration-700"/>
                </button>
              )}
              <button onClick={handleLogout} className="p-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/10">
@@ -303,7 +323,7 @@ const App = () => {
               className={`px-10 py-4 text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl transition-all duration-500 border-2 ${
                 activeCategory === cat 
                 ? 'bg-[#064e3b] border-[#064e3b] text-white shadow-2xl shadow-emerald-200/50 -translate-y-1.5' 
-                : 'bg-white border-white text-slate-400 hover:border-slate-200'
+                : 'bg-white border-white text-slate-400 hover:border-slate-200 hover:text-slate-600'
               }`}
             >
               {cat}
@@ -334,8 +354,8 @@ const App = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
               {(teams[activeCategory] || []).map((team, index) => (
-                <div key={index} className="group bg-slate-50 border-2 border-slate-100 hover:border-emerald-300 p-6 rounded-[2.5rem] transition-all duration-300 flex items-center gap-5 relative shadow-sm hover:shadow-xl">
-                  <div className="w-12 h-12 bg-white border-2 border-slate-100 rounded-2xl flex items-center justify-center font-black text-emerald-600 text-sm shadow-inner group-hover:border-emerald-200">
+                <div key={index} className="group bg-slate-50 border-2 border-slate-100 hover:border-emerald-300 p-6 rounded-[2.5rem] transition-all duration-300 flex items-center gap-5 relative shadow-sm hover:shadow-xl hover:-translate-y-1">
+                  <div className="w-12 h-12 bg-white border-2 border-slate-100 rounded-2xl flex items-center justify-center font-black text-emerald-600 text-sm shadow-inner group-hover:border-emerald-200 transition-colors">
                     {index + 1}
                   </div>
                   <div className="flex-grow">
@@ -359,16 +379,16 @@ const App = () => {
               onClick={startTournament} 
               className="w-full bg-gradient-to-br from-[#064e3b] to-[#065f46] text-white font-black py-7 rounded-[2.5rem] shadow-2xl shadow-emerald-900/20 flex items-center justify-center gap-4 active:scale-95 hover:scale-[1.01] transition-all text-2xl uppercase tracking-tighter italic"
             >
-              <Play size={32} fill="currentColor" className="animate-pulse"/> Turnuvayı Başlat
+              <Play size={32} fill="currentColor" className="animate-pulse"/> Fikstürü Canlıya Al
             </button>
           </div>
         ) : (
-          /* --- FİKSTÜR EKRANI --- */
+          /* --- FİKSTÜR EKRANI (İLK TASARIM DÜZENİ) --- */
           <div className="flex-grow overflow-x-auto bg-white border border-slate-200 rounded-[4rem] p-8 sm:p-14 shadow-2xl shadow-slate-200/40 animate-in fade-in duration-1000">
             <div className="mb-10 flex justify-between items-end px-4">
                <div>
                   <h3 className="font-black text-slate-900 uppercase tracking-tighter text-4xl italic leading-none">{activeCategory}</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.5em] mt-3 ml-1">Fikstür Görünümü</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.5em] mt-3 ml-1">Turnuva Ağacı</p>
                </div>
             </div>
             
@@ -378,7 +398,7 @@ const App = () => {
                   <div key={rIdx} className="flex flex-col gap-14 w-72">
                     <div className="flex flex-col items-center gap-2 mb-4">
                       <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.5em]">
-                        {rIdx === brackets[activeCategory].length - 1 ? 'Şampiyonluk Maçı' : `Tur ${rIdx + 1}`}
+                        {rIdx === brackets[activeCategory].length - 1 ? 'Büyük Final' : `Tur ${rIdx + 1}`}
                       </h4>
                       <div className="h-1.5 w-12 bg-emerald-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
                     </div>
@@ -419,7 +439,7 @@ const App = () => {
                    </div>
                    <div className="text-center">
                      <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.6em] mb-3">Şampiyon</p>
-                     <p className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none underline decoration-emerald-500 decoration-8 underline-offset-8">{champions?.[activeCategory] || 'BEKLENİYOR'}</p>
+                     <p className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter leading-none underline decoration-emerald-500 decoration-8 underline-offset-8 decoration-skip-ink-0">{champions?.[activeCategory] || 'BEKLENİYOR'}</p>
                    </div>
                 </div>
               </div>
@@ -430,7 +450,7 @@ const App = () => {
                 </div>
                 <div className="text-center space-y-3">
                   <p className="font-black text-slate-400 text-2xl uppercase tracking-tighter italic">Fikstür Hazırlanıyor</p>
-                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-[0.3em] max-w-xs mx-auto leading-relaxed">Turnuva direktörü kurulumu tamamladığında sonuçlar burada güncellenecektir.</p>
+                  <p className="text-[10px] text-slate-300 font-black uppercase tracking-[0.3em] max-w-xs mx-auto leading-relaxed text-center">Turnuva direktörü kurulumu tamamladığında canlı sonuçlar burada akacaktır.</p>
                 </div>
               </div>
             )}
@@ -438,18 +458,21 @@ const App = () => {
         )}
       </main>
 
-      {/* --- MODALLAR (Skor & Sıfırlama) --- */}
+      {/* --- SKOR MODAL --- */}
       {scoreModal.isOpen && scoreModal.matchData && (
-        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-[4rem] w-full max-w-sm overflow-hidden shadow-[0_50px_100px_rgba(0,0,0,0.5)]">
+        <div className="fixed inset-0 bg-slate-950/95 backdrop-blur-lg z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[4rem] w-full max-w-sm overflow-hidden animate-in zoom-in duration-300 shadow-[0_50px_100px_rgba(0,0,0,0.5)]">
             <div className="bg-[#064e3b] p-10 text-white flex justify-between items-center border-b-8 border-emerald-500/20">
-              <h3 className="font-black uppercase tracking-tighter text-3xl italic">Maç Sonucu</h3>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 italic">Live Update</span>
+                <h3 className="font-black uppercase tracking-tighter text-3xl italic">Maç Sonucu</h3>
+              </div>
               <button onClick={() => setScoreModal({ isOpen: false })} className="bg-white/10 p-3 rounded-2xl hover:bg-white/20 transition-all hover:rotate-90"><X size={28}/></button>
             </div>
             <div className="p-12 space-y-12">
                {[ {n: scoreModal.matchData.t1, id: 't1'}, {n: scoreModal.matchData.t2, id: 't2'} ].map(side => (
                  <div key={side.id} className="space-y-5">
-                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] text-center truncate px-6">{side.n}</p>
+                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] text-center truncate px-6 leading-tight">{side.n}</p>
                    <div className="flex justify-center">
                     <input 
                         type="number" 
@@ -464,32 +487,40 @@ const App = () => {
                    </div>
                  </div>
                ))}
-               <button onClick={() => handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] shadow-2xl active:scale-95 transition-all text-sm tracking-[0.4em] uppercase hover:bg-black">Yayınla</button>
+               <button onClick={() => handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2.5rem] shadow-2xl active:scale-95 transition-all text-sm tracking-[0.4em] uppercase hover:bg-black">Onayla Ve Yayınla</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* --- SIFIRLAMA MODAL --- */}
       {resetModal.isOpen && (
-        <div className="fixed inset-0 bg-red-950/95 backdrop-blur-lg z-[110] flex items-center justify-center p-4 animate-in zoom-in duration-300">
-          <div className="bg-white rounded-[4rem] w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 bg-red-950/95 backdrop-blur-md z-[110] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[4rem] w-full max-w-sm overflow-hidden animate-in zoom-in duration-300 shadow-2xl">
             <div className="bg-red-600 p-10 text-white flex justify-between items-center border-b-8 border-red-500/20">
-              <h3 className="font-black uppercase tracking-tighter text-3xl italic text-center w-full">Sıfırla</h3>
-              <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="bg-white/10 p-3 rounded-2xl absolute right-10"><X size={28}/></button>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] opacity-70">Sistem İşlemi</span>
+                <h3 className="font-black uppercase tracking-tighter text-3xl italic">Turnuvayı Sıfırla</h3>
+              </div>
+              <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="bg-white/10 p-3 rounded-2xl"><X size={28}/></button>
             </div>
             <div className="p-12 space-y-8 text-center">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest leading-relaxed px-4">Tüm veriler kalıcı olarak silinecektir. Devam etmek için şifreyi girin.</p>
+              <p className="text-xs font-black text-slate-500 uppercase tracking-widest leading-relaxed px-4 italic">Dikkat: Tüm kategorilerdeki veriler kalıcı olarak temizlenecektir.</p>
+              
               <div className="space-y-2">
                 <input 
                   type="password" 
                   value={resetModal.password} 
                   onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} 
-                  className={`w-full text-center p-6 bg-slate-50 border-4 rounded-[2rem] font-black text-4xl outline-none transition-all ${resetModal.error ? 'border-red-500 animate-pulse' : 'border-slate-100 focus:border-red-600'}`}
+                  className={`w-full text-center p-6 bg-slate-50 border-4 rounded-[2.5rem] font-black text-4xl outline-none transition-all ${resetModal.error ? 'border-red-500' : 'border-slate-100 focus:border-red-600'}`}
                   placeholder="****"
                 />
                 {resetModal.error && <p className="text-red-600 text-[10px] font-black uppercase tracking-[0.2em]">{resetModal.error}</p>}
               </div>
-              <button onClick={handleGlobalReset} className="w-full bg-red-600 text-white font-black py-6 rounded-[2.5rem] shadow-2xl shadow-red-200 active:scale-95 transition-all uppercase tracking-[0.3em] text-xs">Onayla</button>
+              
+              <button onClick={handleGlobalReset} className="w-full bg-red-600 text-white font-black py-6 rounded-[2.5rem] shadow-2xl shadow-red-200 active:scale-95 transition-all uppercase tracking-[0.3em] text-xs hover:bg-red-700">
+                Sıfırlamayı Onayla
+              </button>
             </div>
           </div>
         </div>
