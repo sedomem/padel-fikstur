@@ -19,13 +19,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = "padel-tourney-v1"; // Sabit bir AppID kullanıyoruz
+const appId = "padel-tourney-v1"; 
 
 const CATEGORIES = ['Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
 
 const App = () => {
   // Kullanıcı ve Bağlantı Durumları
-  const [userRole, setUserRole] = useState(null); // 'admin', 'guest' veya null
+  const [userRole, setUserRole] = useState(null); 
   const [loginData, setLoginData] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [fbUser, setFbUser] = useState(null);
@@ -57,7 +57,7 @@ const App = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Canlı Veri Senkronizasyonu (Tüm kullanıcılar için)
+  // 2. Canlı Veri Senkronizasyonu
   useEffect(() => {
     if (!fbUser) return;
 
@@ -65,6 +65,7 @@ const App = () => {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        // Güvenli veri ataması
         if (data.brackets) setBrackets(data.brackets);
         if (data.champions) setChampions(data.champions);
         if (data.phase) setPhase(data.phase);
@@ -106,9 +107,9 @@ const App = () => {
   const handleNameChange = (index, value) => {
     if (userRole !== 'admin') return;
     const newTeams = { ...teams };
+    if (!newTeams[activeCategory]) newTeams[activeCategory] = [];
     newTeams[activeCategory][index] = value;
     setTeams(newTeams);
-    // Yazarken veritabanına kaydet
     syncToCloud({ teams: newTeams });
   };
 
@@ -116,7 +117,7 @@ const App = () => {
     if (userRole !== 'admin') return;
     const newBrackets = { ...brackets };
     CATEGORIES.forEach(cat => {
-      const valid = teams[cat]?.filter(t => t.trim() !== '') || [];
+      const valid = teams[cat]?.filter(t => t && t.trim() !== '') || [];
       if (valid.length >= 2) {
         newBrackets[cat] = generateInitialBracket(valid);
       }
@@ -134,7 +135,10 @@ const App = () => {
     for (let i = 0; i < numMatchesRound0; i++) {
       const t1 = validTeams[i];
       const t2 = (i + numMatchesRound0 < validTeams.length) ? validTeams[i + numMatchesRound0] : null;
-      round0.push({ id: `0-${i}`, t1, t2, isBye: t2 === null, winner: t2 === null ? t1 : null, scores: [{t1:'',t2:''},{t1:'',t2:''},{t1:'',t2:''}] });
+      round0.push({ 
+        id: `0-${i}`, t1, t2, isBye: t2 === null, winner: t2 === null ? t1 : null, 
+        scores: [{t1:'',t2:''},{t1:'',t2:''},{t1:'',t2:''}] 
+      });
     }
     rounds.push(round0);
     let prevMatches = numMatchesRound0;
@@ -143,7 +147,10 @@ const App = () => {
       const currentMatches = prevMatches / 2;
       const round = [];
       for (let i = 0; i < currentMatches; i++) {
-        round.push({ id: `${roundNum}-${i}`, t1: rounds[roundNum-1][i*2].winner, t2: rounds[roundNum-1][i*2+1].winner, isBye: false, winner: null, scores: [{t1:'',t2:''},{t1:'',t2:''},{t1:'',t2:''}] });
+        round.push({ 
+          id: `${roundNum}-${i}`, t1: rounds[roundNum-1][i*2].winner, t2: rounds[roundNum-1][i*2+1].winner, 
+          isBye: false, winner: null, scores: [{t1:'',t2:''},{t1:'',t2:''},{t1:'',t2:''}] 
+        });
       }
       rounds.push(round);
       prevMatches = currentMatches;
@@ -159,7 +166,12 @@ const App = () => {
     match.scores = newScores;
     
     let s1 = 0, s2 = 0;
-    newScores.forEach(s => { if(parseInt(s.t1)>parseInt(s.t2)) s1++; else if(parseInt(s.t2)>parseInt(s.t1)) s2++; });
+    newScores.forEach(s => { 
+      const p1 = parseInt(s.t1) || 0;
+      const p2 = parseInt(s.t2) || 0;
+      if(p1 > p2) s1++; else if(p2 > p1) s2++; 
+    });
+    
     const winner = s1 > s2 ? match.t1 : s2 > s1 ? match.t2 : null;
     
     if (winner) {
@@ -181,17 +193,15 @@ const App = () => {
 
   // --- GÖRÜNÜMLER ---
 
-  // 1. Yükleme Ekranı
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
         <Loader2 className="w-12 h-12 text-emerald-600 animate-spin mb-4" />
-        <p className="text-slate-600 font-bold uppercase tracking-widest text-xs">Sistem Hazırlanıyor...</p>
+        <p className="text-slate-600 font-bold uppercase tracking-widest text-xs text-center">Bağlantı Kuruluyor...</p>
       </div>
     );
   }
 
-  // 2. Giriş Ekranı (Eğer rol seçilmediyse)
   if (!userRole) {
     return (
       <div className="min-h-screen bg-emerald-900 flex items-center justify-center p-4">
@@ -202,7 +212,7 @@ const App = () => {
             </div>
           </div>
           <h1 className="text-3xl font-black text-center text-slate-800 mb-2">Padel Fikstür</h1>
-          <p className="text-center text-slate-400 text-sm mb-10 font-medium">Lütfen giriş yöntemini seçiniz.</p>
+          <p className="text-center text-slate-400 text-sm mb-10 font-medium tracking-tight">Turnuva yönetimi ve canlı takip sistemi.</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             {loginError && <div className="bg-red-50 text-red-600 text-xs p-3 rounded-xl border border-red-100 text-center font-bold">{loginError}</div>}
@@ -221,7 +231,6 @@ const App = () => {
     );
   }
 
-  // 3. Ana Uygulama Ekranı
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <header className="bg-emerald-800 text-white p-4 shadow-lg sticky top-0 z-50">
@@ -235,8 +244,8 @@ const App = () => {
             </div>
           </div>
           <div className="flex items-center gap-4">
-             <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full">{userRole === 'admin' ? 'YÖNETİCİ' : 'İZLEYİCİ'}</span>
-             <button onClick={handleLogout} className="p-2 hover:bg-black/20 rounded-lg transition-colors"><LogOut size={20}/></button>
+             <span className="text-[10px] font-black bg-white/20 px-3 py-1 rounded-full uppercase">{userRole === 'admin' ? 'Yönetici' : 'İzleyici'}</span>
+             <button onClick={() => setUserRole(null)} className="p-2 hover:bg-black/20 rounded-lg transition-colors"><LogOut size={20}/></button>
           </div>
         </div>
       </header>
@@ -258,13 +267,18 @@ const App = () => {
                   <button onClick={() => removeTeam(index)} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={20}/></button>
                 </div>
               ))}
-              <button onClick={() => { const t = {...teams}; t[activeCategory] = [...(t[activeCategory]||[]), '']; setTeams(t); }} className="w-full p-3 border-2 border-dashed border-slate-200 text-slate-400 rounded-xl font-bold hover:border-emerald-300 hover:text-emerald-500 transition-all">+ Takım Ekle</button>
+              <button onClick={() => { 
+                const t = {...teams}; 
+                if(!t[activeCategory]) t[activeCategory] = [];
+                t[activeCategory] = [...t[activeCategory], '']; 
+                setTeams(t); 
+              }} className="w-full p-3 border-2 border-dashed border-slate-200 text-slate-400 rounded-xl font-bold hover:border-emerald-300 hover:text-emerald-500 transition-all">+ Takım Ekle</button>
             </div>
-            <button onClick={startTournament} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3"><Play/> FİKSTÜRÜ BAŞLAT</button>
+            <button onClick={startTournament} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl flex items-center justify-center gap-3 active:scale-95 transition-all"><Play/> FİKSTÜRÜ BAŞLAT</button>
           </div>
         ) : (
           <div className="flex-grow overflow-x-auto bg-white border border-slate-200 rounded-3xl p-6 shadow-inner">
-            {brackets[activeCategory] ? (
+            {brackets?.[activeCategory] ? (
               <div className="flex gap-12 min-w-max h-full items-center px-4">
                 {brackets[activeCategory].map((round, rIdx) => (
                   <div key={rIdx} className="flex flex-col gap-8 w-56">
@@ -272,10 +286,10 @@ const App = () => {
                     {round.map((match, mIdx) => (
                       <div key={mIdx} className={`p-3 border-2 rounded-2xl bg-white shadow-sm space-y-2 ${userRole === 'admin' && !match.isBye ? 'cursor-pointer hover:border-emerald-500 transition-all' : 'border-slate-100'}`}
                            onClick={() => { if(userRole === 'admin' && !match.isBye && match.t1 && match.t2) setScoreModal({ isOpen: true, category: activeCategory, rIdx, mIdx, matchData: match }); }}>
-                         {[ {n: match.t1, s: match.scores[0].t1, win: match.winner === match.t1}, {n: match.t2, s: match.scores[0].t2, win: match.winner === match.t2} ].map((side, i) => (
+                         {[ {n: match.t1, s: match.scores?.[0]?.t1 || '0', win: match.winner === match.t1}, {n: match.t2, s: match.scores?.[0]?.t2 || '0', win: match.winner === match.t2} ].map((side, i) => (
                            <div key={i} className={`flex justify-between p-2 rounded-xl text-xs font-black ${side.win ? 'bg-emerald-600 text-white' : 'bg-slate-50 text-slate-600'}`}>
                              <span className="truncate max-w-[120px]">{side.n || '...'}</span>
-                             <span>{side.s || '0'}</span>
+                             <span>{side.s}</span>
                            </div>
                          ))}
                       </div>
@@ -283,37 +297,37 @@ const App = () => {
                   </div>
                 ))}
                 <div className="w-64 flex flex-col items-center gap-4">
-                   <div className={`p-10 rounded-full border-4 flex items-center justify-center ${champions[activeCategory] ? 'bg-yellow-50 border-yellow-400 shadow-2xl animate-bounce' : 'bg-slate-50 border-slate-200 opacity-20'}`}>
-                      <Trophy size={60} className={champions[activeCategory] ? 'text-yellow-500' : 'text-slate-400'}/>
+                   <div className={`p-10 rounded-full border-4 flex items-center justify-center ${champions?.[activeCategory] ? 'bg-yellow-50 border-yellow-400 shadow-2xl animate-bounce' : 'bg-slate-50 border-slate-200 opacity-20'}`}>
+                      <Trophy size={60} className={champions?.[activeCategory] ? 'text-yellow-500' : 'text-slate-400'}/>
                    </div>
                    <div className="text-center">
-                     <p className="text-[10px] font-black text-slate-400 uppercase">Şampiyon</p>
-                     <p className="text-xl font-black text-slate-800">{champions[activeCategory] || 'BEKLENİYOR'}</p>
+                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Şampiyon</p>
+                     <p className="text-xl font-black text-slate-800 uppercase tracking-tighter">{champions?.[activeCategory] || 'BEKLENİYOR'}</p>
                    </div>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-300 gap-4">
                 <AlertCircle size={60} className="opacity-10"/>
-                <p className="font-black text-center">FİKSTÜR HAZIR DEĞİL<br/><span className="text-xs font-bold">Admin kurulumu tamamladığında burada görünecek.</span></p>
+                <p className="font-black text-center text-slate-400">FİKSTÜR HAZIR DEĞİL<br/><span className="text-[10px] font-bold uppercase">Yönetici kurulumu tamamladığında sonuçlar burada görünecek.</span></p>
               </div>
             )}
           </div>
         )}
       </main>
 
-      {/* Skor Modalı */}
-      {scoreModal.isOpen && (
+      {/* Skor Giriş Paneli */}
+      {scoreModal.isOpen && scoreModal.matchData && (
         <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-xs overflow-hidden">
+          <div className="bg-white rounded-3xl w-full max-w-xs overflow-hidden animate-in zoom-in duration-200">
             <div className="bg-emerald-600 p-6 text-white flex justify-between items-center">
               <span className="font-black uppercase tracking-tighter">Skor Girişi</span>
-              <button onClick={() => setScoreModal({ isOpen: false })}><X/></button>
+              <button onClick={() => setScoreModal({ isOpen: false })} className="hover:rotate-90 transition-all"><X/></button>
             </div>
             <div className="p-8 space-y-6">
                {[ {n: scoreModal.matchData.t1, id: 't1'}, {n: scoreModal.matchData.t2, id: 't2'} ].map(side => (
                  <div key={side.id} className="space-y-2 text-center">
-                   <p className="text-[10px] font-black text-slate-400 uppercase">{side.n}</p>
+                   <p className="text-[10px] font-black text-slate-400 uppercase truncate">{side.n}</p>
                    <input type="number" value={scoreModal.matchData.scores[0][side.id]} 
                           onChange={(e) => {
                             const b = {...brackets};
@@ -323,7 +337,7 @@ const App = () => {
                           className="w-20 text-center p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-2xl focus:border-emerald-500 outline-none" />
                  </div>
                ))}
-               <button onClick={() => handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg">KAYDET</button>
+               <button onClick={() => handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeCategory, scoreModal.matchData.scores)} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">KAYDET</button>
             </div>
           </div>
         </div>
