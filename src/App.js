@@ -40,7 +40,7 @@ const App = () => {
   const [champions, setChampions] = useState({ 'Çift Erkekler': null, 'Çift Kadınlar': null, 'Mix Çiftler': null });
   const [schedule, setSchedule] = useState([]);
 
-  const [scoreModal, setScoreModal] = useState({ isOpen: false, category: null, rIdx: null, mIdx: null, matchData: null, editMode: false });
+  const [scoreModal, setScoreModal] = useState({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false });
   const [resetModal, setResetModal] = useState({ isOpen: false, password: '', error: '' });
   const [scheduleModal, setScheduleModal] = useState({ isOpen: false, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
 
@@ -53,7 +53,7 @@ const App = () => {
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'tournamentState', 'main');
       await setDoc(docRef, updates, { merge: true });
-    } catch (e) { console.error("Sync Hatası:", e); }
+    } catch (e) { console.error("Bulut Senkronizasyon Hatası:", e); }
   };
 
   const handleLogin = (e) => {
@@ -79,18 +79,23 @@ const App = () => {
 
   // PROGRAM YÖNETİMİ
   const handleAddSchedule = () => {
-    const newItem = {
-      id: Date.now(),
-      type: scheduleModal.type,
-      time: scheduleModal.time || "00:00",
-      label: scheduleModal.label || "İsimsiz Etkinlik",
-      category: scheduleModal.type === 'match' ? scheduleModal.category : 'Genel',
-      court: scheduleModal.type === 'match' ? scheduleModal.court : null
-    };
-    const newSchedule = [...(schedule || []), newItem]; // Null koruması eklendi (Beyaz ekran çözümü)
-    setSchedule(newSchedule);
-    syncToCloud({ schedule: newSchedule });
-    setScheduleModal({ isOpen: false, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
+    try {
+      const newItem = {
+        id: Date.now(),
+        type: scheduleModal.type || 'event',
+        time: scheduleModal.time || "00:00",
+        label: scheduleModal.label || "İsimsiz Etkinlik",
+        category: scheduleModal.type === 'match' ? (scheduleModal.category || MATCH_CATEGORIES[0]) : 'Genel',
+        court: scheduleModal.type === 'match' ? (scheduleModal.court || '1') : null
+      };
+      const newSchedule = [...(schedule || []), newItem]; 
+      setSchedule(newSchedule);
+      syncToCloud({ schedule: newSchedule });
+      setScheduleModal({ isOpen: false, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
+    } catch (err) {
+      console.error(err);
+      alert("Program eklenirken hata oluştu.");
+    }
   };
 
   const removeScheduleItem = (id) => {
@@ -153,16 +158,16 @@ const App = () => {
     return rounds;
   };
 
-  // BAĞIMSIZ KATEGORİ FİKSTÜR OLUŞTURUCU
-  const createCategoryBracket = () => {
+  // BAĞIMSIZ KATEGORİ FİKSTÜR OLUŞTURUCU (Tamamen İzole Edildi)
+  const createCategoryBracket = (cat) => {
     if (userRole !== 'admin') return;
-    const validTeams = teams[activeTab]?.filter(t => t && t.trim() !== '') || [];
+    const validTeams = teams[cat]?.filter(t => t && t.trim() !== '') || [];
     if (validTeams.length < 2) {
-      alert("Fikstür oluşturmak için en az 2 takım girmelisiniz!");
+      alert(`${cat} kategorisinde fikstür için en az 2 takım girmelisiniz!`);
       return;
     }
     const newBrackets = { ...brackets };
-    newBrackets[activeTab] = generateInitialBracket(validTeams);
+    newBrackets[cat] = generateInitialBracket(validTeams);
     setBrackets(newBrackets);
     syncToCloud({ brackets: newBrackets, teams });
   };
@@ -194,50 +199,59 @@ const App = () => {
     }
   };
 
-  const handleScoreSave = (rIdx, mIdx, category, newScores) => {
-    if (userRole !== 'admin') return;
+  // CANLI MAÇ VERİSİ (Stale State ve Beyaz Ekranı Önler)
+  const smCat = scoreModal.category;
+  const smR = scoreModal.rIdx;
+  const smM = scoreModal.mIdx;
+  const currentMatch = (scoreModal.isOpen && smCat && brackets?.[smCat]) ? brackets[smCat][smR][smM] : null;
+
+  const handleScoreSave = () => {
+    if (userRole !== 'admin' || !currentMatch) return;
     const newBrackets = { ...brackets };
-    const match = newBrackets[category][rIdx][mIdx];
-    match.scores = newScores;
-    const p1 = parseInt(newScores[0].t1) || 0;
-    const p2 = parseInt(newScores[0].t2) || 0;
-    const winner = p1 > p2 ? match.t1 : p2 > p1 ? match.t2 : null;
+    const p1 = parseInt(currentMatch.scores[0].t1) || 0;
+    const p2 = parseInt(currentMatch.scores[0].t2) || 0;
+    const winner = p1 > p2 ? currentMatch.t1 : p2 > p1 ? currentMatch.t2 : null;
     
     if (winner) {
-      match.winner = winner;
-      if (rIdx + 1 < newBrackets[category].length) {
-        const nextMi = Math.floor(mIdx / 2);
-        if (mIdx % 2 === 0) newBrackets[category][rIdx+1][nextMi].t1 = winner;
-        else newBrackets[category][rIdx+1][nextMi].t2 = winner;
+      newBrackets[smCat][smR][smM].winner = winner;
+      if (smR + 1 < newBrackets[smCat].length) {
+        const nextMi = Math.floor(smM / 2);
+        if (smM % 2 === 0) newBrackets[smCat][smR+1][nextMi].t1 = winner;
+        else newBrackets[smCat][smR+1][nextMi].t2 = winner;
       } else {
-        const nc = { ...champions, [category]: winner };
+        const nc = { ...champions, [smCat]: winner };
         setChampions(nc);
         syncToCloud({ champions: nc });
       }
     }
     setBrackets(newBrackets);
-    setScoreModal({ isOpen: false });
+    setScoreModal({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false });
     syncToCloud({ brackets: newBrackets });
   };
 
-  const clearMatch = (rIdx, mIdx, category) => {
-    if (userRole !== 'admin') return;
+  const handleEditSave = () => {
+    syncToCloud({ brackets });
+    setScoreModal({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false });
+  };
+
+  const clearMatch = () => {
+    if (userRole !== 'admin' || !currentMatch) return;
     const newBrackets = { ...brackets };
     const clearRec = (ri, mi) => {
-      const m = newBrackets[category][ri][mi];
+      const m = newBrackets[smCat][ri][mi];
       m.winner = null; m.scores = [{t1:'',t2:''}];
-      if (ri + 1 < newBrackets[category].length) {
+      if (ri + 1 < newBrackets[smCat].length) {
         const nMi = Math.floor(mi / 2);
-        if (mi % 2 === 0) newBrackets[category][ri + 1][nMi].t1 = null;
-        else newBrackets[category][ri + 1][nMi].t2 = null;
+        if (mi % 2 === 0) newBrackets[smCat][ri + 1][nMi].t1 = null;
+        else newBrackets[smCat][ri + 1][nMi].t2 = null;
         clearRec(ri + 1, nMi);
       }
     };
-    clearRec(rIdx, mIdx);
-    const updChamps = { ...champions, [category]: null };
+    clearRec(smR, smM);
+    const updChamps = { ...champions, [smCat]: null };
     setBrackets(newBrackets);
     setChampions(updChamps);
-    setScoreModal({ isOpen: false });
+    setScoreModal({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false });
     syncToCloud({ brackets: newBrackets, champions: updChamps });
   };
 
@@ -266,8 +280,10 @@ const App = () => {
     return () => unsub();
   }, [fbUser]);
 
-  // --- UI RENDERING ---
+  // --- UI YARDIMCILARI ---
+  const isBracketGenerated = activeTab !== 'Program' && Array.isArray(brackets?.[activeTab]);
 
+  // --- YÜKLENİYOR VE GİRİŞ ---
   if (isLoading) return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
       <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-2" />
@@ -306,9 +322,9 @@ const App = () => {
           <div className="flex items-center gap-2">
              <span className="text-[7px] font-black bg-white/10 px-2 py-1 rounded uppercase">{userRole === 'admin' ? 'ADMİN' : 'İZLEYİCİ'}</span>
              {userRole === 'admin' && (
-               <button onClick={() => setResetModal({ isOpen: true, password: '', error: '' })} className="p-1.5 bg-red-600/20 rounded-lg hover:bg-red-600 transition-all" title="Master Reset"><RotateCcw size={14}/></button>
+               <button onClick={() => setResetModal({ isOpen: true, password: '', error: '' })} className="p-1.5 bg-red-600/20 hover:bg-red-600 rounded-lg transition-all" title="Master Reset"><RotateCcw size={14}/></button>
              )}
-             <button onClick={handleLogout} className="p-1.5 bg-white/5 rounded-lg hover:bg-white/10" title="Çıkış Yap"><LogOut size={14}/></button>
+             <button onClick={handleLogout} className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-all" title="Çıkış Yap"><LogOut size={14}/></button>
           </div>
         </div>
       </header>
@@ -341,7 +357,7 @@ const App = () => {
                 <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                    {(schedule || [])
                     .filter(i => scheduleFilter === 'Tümü' || i.category === scheduleFilter || (scheduleFilter === 'Genel' && i.type === 'event'))
-                    .sort((a,b) => a.time.localeCompare(b.time))
+                    .sort((a,b) => String(a.time || "00:00").localeCompare(String(b.time || "00:00"))) // Sıralama Çökme Koruması
                     .map(item => (
                       <div key={item.id} className="relative pl-8 group">
                          <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-4 border-white shadow-sm flex items-center justify-center ${item.type === 'match' ? 'bg-emerald-500' : 'bg-slate-400'}`}>
@@ -351,7 +367,7 @@ const App = () => {
                             <div className="flex justify-between items-start">
                                <div className="space-y-1">
                                   <div className="flex items-center gap-2">
-                                     <span className="text-[10px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded shadow-sm">{item.time}</span>
+                                     <span className="text-[10px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded shadow-sm">{item.time || "00:00"}</span>
                                      {item.type === 'match' && (
                                        <span className="text-[7px] font-black bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded uppercase">{item.category}</span>
                                      )}
@@ -378,7 +394,7 @@ const App = () => {
           </div>
         ) : (
           /* --- BAĞIMSIZ TURNUVA KATEGORİSİ GÖRÜNÜMÜ --- */
-          !brackets?.[activeTab] ? (
+          !isBracketGenerated ? (
             <div className="bg-white rounded-2xl p-6 border shadow-xl max-w-3xl mx-auto w-full animate-in fade-in">
               <div className="flex justify-between items-center mb-6">
                 <div>
@@ -411,7 +427,7 @@ const App = () => {
                 )}
               </div>
               {userRole === 'admin' && (
-                <button onClick={createCategoryBracket} className="w-full bg-[#064e3b] text-white font-black py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-widest italic active:scale-95 transition-all"><Play size={16} fill="currentColor"/> {activeTab} Fikstürünü Oluştur</button>
+                <button onClick={() => createCategoryBracket(activeTab)} className="w-full bg-[#064e3b] text-white font-black py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-widest italic active:scale-95 transition-all"><Play size={16} fill="currentColor"/> {activeTab} Fikstürünü Oluştur</button>
               )}
             </div>
           ) : (
@@ -431,7 +447,7 @@ const App = () => {
                       {round.map((match, mIdx) => (
                         <div key={mIdx} 
                              className={`group relative bg-white border-2 rounded-xl shadow-sm transition-all ${userRole === 'admin' && !match.isBye ? 'cursor-pointer hover:border-emerald-500' : 'border-slate-50'}`}
-                             onClick={() => { if(userRole === 'admin' && !match.isBye && match.t1 && match.t2) setScoreModal({ isOpen: true, category: activeTab, rIdx, mIdx, matchData: match, editMode: false }); }}>
+                             onClick={() => { if(userRole === 'admin' && !match.isBye && match.t1 && match.t2) setScoreModal({ isOpen: true, category: activeTab, rIdx, mIdx, editMode: false }); }}>
                           <div className="p-2 space-y-1.5">
                             {[ {n: match.t1, s: match.scores?.[0]?.t1 || '0', win: match.winner === match.t1}, {n: match.t2, s: match.scores?.[0]?.t2 || '0', win: match.winner === match.t2} ].map((side, i) => (
                               <div key={i} className={`flex justify-between items-center p-1.5 rounded-lg text-[9px] font-black transition-all ${side.win ? 'bg-[#064e3b] text-white' : 'bg-slate-50 text-slate-600'}`}>
@@ -482,7 +498,7 @@ const App = () => {
                   {scheduleModal.type === 'match' && (
                     <div className="space-y-1">
                       <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Kort</label>
-                      <select value={scheduleModal.court} onChange={e => setScheduleModal({...scheduleModal, court: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none">
+                      <select value={scheduleModal.court} onChange={e => setScheduleModal({...scheduleModal, court: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none focus:border-emerald-500">
                         <option value="1">Kort 1</option><option value="2">Kort 2</option><option value="3">Kort 3</option>
                       </select>
                     </div>
@@ -492,7 +508,7 @@ const App = () => {
                 {scheduleModal.type === 'match' && (
                   <div className="space-y-1">
                     <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Kategori</label>
-                    <select value={scheduleModal.category} onChange={e => setScheduleModal({...scheduleModal, category: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none">
+                    <select value={scheduleModal.category} onChange={e => setScheduleModal({...scheduleModal, category: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none focus:border-emerald-500">
                       {MATCH_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
@@ -510,35 +526,35 @@ const App = () => {
       )}
 
       {/* --- SKOR & DÜZENLEME MODAL --- */}
-      {scoreModal.isOpen && scoreModal.matchData && (
+      {scoreModal.isOpen && currentMatch && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200 shadow-2xl">
             <div className="bg-[#064e3b] p-4 text-white flex justify-between items-center">
               <h3 className="font-black uppercase text-xs italic tracking-widest">{scoreModal.editMode ? 'Takımları Düzenle' : 'Maç Sonucu'}</h3>
-              <button onClick={() => setScoreModal({ ...scoreModal, isOpen: false })}><X size={18}/></button>
+              <button onClick={() => setScoreModal({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false })}><X size={18}/></button>
             </div>
             <div className="p-6 space-y-6 text-center">
-               {[ {n: scoreModal.matchData.t1, id: 't1'}, {n: scoreModal.matchData.t2, id: 't2'} ].map(side => (
+               {[ {n: currentMatch.t1, id: 't1'}, {n: currentMatch.t2, id: 't2'} ].map(side => (
                  <div key={side.id} className="space-y-2">
                    {scoreModal.editMode ? (
                      <div className="text-left space-y-1 px-4">
                        <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Takım İsmi</label>
-                       <input type="text" value={side.n} onChange={(e) => {
-                         const b = {...brackets}; b[activeTab][scoreModal.rIdx][scoreModal.mIdx][side.id] = e.target.value; setBrackets({...b});
+                       <input type="text" value={side.n || ''} onChange={(e) => {
+                         const nb = {...brackets}; nb[smCat][smR][smM][side.id] = e.target.value; setBrackets(nb);
                        }} className="w-full p-2.5 bg-slate-50 border rounded-lg font-bold text-xs outline-none focus:ring-1 focus:ring-emerald-500" />
                      </div>
                    ) : (
                      <>
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate px-6 leading-tight">{side.n}</p>
-                        <input type="number" value={scoreModal.matchData.scores[0][side.id]} onChange={(e) => {
-                          const b = {...brackets}; b[activeTab][scoreModal.rIdx][scoreModal.mIdx].scores[0][side.id] = e.target.value; setBrackets({...b});
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate px-6 leading-tight">{side.n || '...'}</p>
+                        <input type="number" value={currentMatch.scores[0][side.id]} onChange={(e) => {
+                          const nb = {...brackets}; nb[smCat][smR][smM].scores[0][side.id] = e.target.value; setBrackets(nb);
                         }} className="w-16 text-center p-2 bg-slate-50 border rounded-xl font-black text-xl text-emerald-700 shadow-inner outline-none" />
                      </>
                    )}
                  </div>
                ))}
                <div className="space-y-2 pt-2 border-t px-2">
-                  <button onClick={() => scoreModal.editMode ? syncToCloud({ brackets }) : handleScoreSave(scoreModal.rIdx, scoreModal.mIdx, activeTab, scoreModal.matchData.scores)} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-lg text-[9px] tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
+                  <button onClick={() => scoreModal.editMode ? handleEditSave() : handleScoreSave()} className="w-full bg-[#064e3b] text-white font-black py-3 rounded-lg text-[9px] tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                     {scoreModal.editMode ? <Save size={12}/> : null} {scoreModal.editMode ? 'KAYDET' : 'SKORU YAYINLA'}
                   </button>
                   <div className="flex gap-2">
@@ -546,7 +562,7 @@ const App = () => {
                       {scoreModal.editMode ? <X size={12}/> : <Edit3 size={12}/>} {scoreModal.editMode ? 'İptal' : 'Düzenle'}
                     </button>
                     {!scoreModal.editMode && (
-                      <button onClick={() => clearMatch(scoreModal.rIdx, scoreModal.mIdx, activeTab)} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-lg text-[8px] uppercase flex items-center justify-center gap-1 hover:bg-red-100 transition-colors">
+                      <button onClick={clearMatch} className="flex-1 bg-red-50 text-red-600 font-bold py-2 rounded-lg text-[8px] uppercase flex items-center justify-center gap-1 hover:bg-red-100 transition-colors">
                         <RotateCcw size={12}/> Sıfırla
                       </button>
                     )}
@@ -563,7 +579,7 @@ const App = () => {
           <div className="bg-white rounded-2xl w-full max-w-xs p-6 shadow-2xl animate-in zoom-in duration-200 text-center">
             <h3 className="font-black uppercase text-sm text-red-600 mb-4 tracking-widest italic">MASTER RESET</h3>
             <p className="text-[9px] font-bold text-slate-500 mb-4 uppercase">Her şeyi silmek için şifreyi (1234) girin.</p>
-            <input type="password" value={resetModal.password} onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} className={`w-full text-center p-3 bg-slate-50 border-2 rounded-xl font-black text-xl mb-4 outline-none ${resetModal.error ? 'border-red-500' : 'border-slate-100'}`} placeholder="****" />
+            <input type="password" value={resetModal.password} onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} className={`w-full text-center p-3 bg-slate-50 border-2 rounded-xl font-black text-xl mb-4 outline-none ${resetModal.error ? 'border-red-500' : 'border-slate-100 focus:border-red-600'}`} placeholder="****" />
             {resetModal.error && <p className="text-red-600 text-[8px] font-bold uppercase mb-2">{resetModal.error}</p>}
             <div className="flex gap-2">
               <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="flex-1 bg-slate-100 font-black py-3 rounded-xl text-[10px] uppercase hover:bg-slate-200 transition-colors">İPTAL</button>
@@ -577,4 +593,3 @@ const App = () => {
 };
 
 export default App;
-```eof
