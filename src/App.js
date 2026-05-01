@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trophy, Users, Play, RotateCcw, Shuffle, Check, Plus, Trash2, X, AlertCircle, Lock, LogOut, Cloud, CloudOff, Loader2, Settings2, Edit3, Save, Calendar, Clock, MapPin, Filter } from 'lucide-react';
+import { Trophy, Users, Play, RotateCcw, Shuffle, Check, Plus, Trash2, X, AlertCircle, Lock, LogOut, Cloud, CloudOff, Loader2, Settings2, Edit3, Save, Calendar, Clock, MapPin, Filter, FileText } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
@@ -20,7 +20,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "padel-tourney-v1"; 
 
-const CATEGORIES = ['Program', 'Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
+const CATEGORIES = ['Kurallar', 'Program', 'Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
 const MATCH_CATEGORIES = ['Çift Erkekler', 'Çift Kadınlar', 'Mix Çiftler'];
 
 const App = () => {
@@ -39,10 +39,11 @@ const App = () => {
   const [brackets, setBrackets] = useState({ 'Çift Erkekler': null, 'Çift Kadınlar': null, 'Mix Çiftler': null });
   const [champions, setChampions] = useState({ 'Çift Erkekler': null, 'Çift Kadınlar': null, 'Mix Çiftler': null });
   const [schedule, setSchedule] = useState([]);
+  const [rules, setRules] = useState(""); // Kurallar için state
 
   const [scoreModal, setScoreModal] = useState({ isOpen: false, category: null, rIdx: null, mIdx: null, editMode: false });
   const [resetModal, setResetModal] = useState({ isOpen: false, password: '', error: '' });
-  const [scheduleModal, setScheduleModal] = useState({ isOpen: false, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
+  const [scheduleModal, setScheduleModal] = useState({ isOpen: false, editId: null, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
 
   const sampleTeams = ["Ali & Veli", "Ayşe & Fatma", "Can & Cem", "Deniz & Derya", "Efe & Ege", "Gül & Nur", "Hasan & Hüseyin", "İrem & Sinem"];
 
@@ -77,25 +78,50 @@ const App = () => {
     localStorage.removeItem('padel_role');
   };
 
-  // PROGRAM YÖNETİMİ
+  // --- KURALLAR KAYDETME ---
+  const handleSaveRules = () => {
+    syncToCloud({ rules });
+    alert("Kurallar başarıyla kaydedildi.");
+  };
+
+  // --- PROGRAM YÖNETİMİ (ADD & EDIT) ---
   const handleAddSchedule = () => {
     try {
-      const newItem = {
-        id: Date.now(),
+      let newSchedule;
+      const itemData = {
+        id: scheduleModal.editId || Date.now(),
         type: scheduleModal.type || 'event',
         time: scheduleModal.time || "00:00",
         label: scheduleModal.label || "İsimsiz Etkinlik",
         category: scheduleModal.type === 'match' ? (scheduleModal.category || MATCH_CATEGORIES[0]) : 'Genel',
         court: scheduleModal.type === 'match' ? (scheduleModal.court || '1') : null
       };
-      const newSchedule = [...(schedule || []), newItem]; 
+
+      if (scheduleModal.editId) {
+        newSchedule = schedule.map(item => item.id === scheduleModal.editId ? itemData : item);
+      } else {
+        newSchedule = [...(schedule || []), itemData];
+      }
+
       setSchedule(newSchedule);
       syncToCloud({ schedule: newSchedule });
-      setScheduleModal({ isOpen: false, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
+      setScheduleModal({ isOpen: false, editId: null, type: 'event', time: '', label: '', category: MATCH_CATEGORIES[0], court: '1' });
     } catch (err) {
       console.error(err);
-      alert("Program eklenirken hata oluştu.");
+      alert("İşlem sırasında hata oluştu.");
     }
+  };
+
+  const openEditSchedule = (item) => {
+    setScheduleModal({
+      isOpen: true,
+      editId: item.id,
+      type: item.type,
+      time: item.time,
+      label: item.label,
+      category: item.category,
+      court: item.court || '1'
+    });
   };
 
   const removeScheduleItem = (id) => {
@@ -104,7 +130,7 @@ const App = () => {
     syncToCloud({ schedule: newSchedule });
   };
 
-  // TAKIM VE FİKSTÜR YÖNETİMİ
+  // --- FİKSTÜR YÖNETİMİ ---
   const fillRandom = () => {
     const shuffled = [...sampleTeams].sort(() => 0.5 - Math.random());
     const newTeams = { ...teams, [activeTab]: shuffled.slice(0, 8) };
@@ -158,7 +184,6 @@ const App = () => {
     return rounds;
   };
 
-  // BAĞIMSIZ KATEGORİ FİKSTÜR OLUŞTURUCU (Tamamen İzole Edildi)
   const createCategoryBracket = (cat) => {
     if (userRole !== 'admin') return;
     const validTeams = teams[cat]?.filter(t => t && t.trim() !== '') || [];
@@ -172,9 +197,8 @@ const App = () => {
     syncToCloud({ brackets: newBrackets, teams });
   };
 
-  // KATEGORİ FİKSTÜRÜNÜ İPTAL ET
   const resetCategoryBracket = (cat) => {
-    if (window.confirm(`${cat} fikstürünü iptal edip takım kayıt ekranına dönmek istediğinize emin misiniz? (Tüm maç sonuçları silinir)`)) {
+    if (window.confirm(`${cat} fikstürünü iptal edip takım kayıt ekranına dönmek istediğinize emin misiniz?`)) {
       const newBrackets = { ...brackets, [cat]: null };
       const newChamps = { ...champions, [cat]: null };
       setBrackets(newBrackets);
@@ -191,15 +215,15 @@ const App = () => {
       setChampions(emptyState);
       setTeams(emptyTeams);
       setSchedule([]);
-      syncToCloud({ brackets: emptyState, champions: emptyState, teams: emptyTeams, schedule: [] });
+      setRules("");
+      syncToCloud({ brackets: emptyState, champions: emptyState, teams: emptyTeams, schedule: [], rules: "" });
       setResetModal({ isOpen: false, password: '', error: '' });
-      setActiveTab('Program');
+      setActiveTab('Kurallar');
     } else {
       setResetModal({ ...resetModal, error: 'Şifre Hatalı!' });
     }
   };
 
-  // CANLI MAÇ VERİSİ (Stale State ve Beyaz Ekranı Önler)
   const smCat = scoreModal.category;
   const smR = scoreModal.rIdx;
   const smM = scoreModal.mIdx;
@@ -273,6 +297,7 @@ const App = () => {
         if (d.champions) setChampions(d.champions);
         if (d.teams) setTeams(d.teams);
         if (d.schedule !== undefined) setSchedule(d.schedule || []);
+        if (d.rules !== undefined) setRules(d.rules || "");
         setIsConnected(true);
       }
       setIsLoading(false);
@@ -281,9 +306,8 @@ const App = () => {
   }, [fbUser]);
 
   // --- UI YARDIMCILARI ---
-  const isBracketGenerated = activeTab !== 'Program' && Array.isArray(brackets?.[activeTab]);
+  const isBracketGenerated = !['Program', 'Kurallar'].includes(activeTab) && Array.isArray(brackets?.[activeTab]);
 
-  // --- YÜKLENİYOR VE GİRİŞ ---
   if (isLoading) return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center">
       <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-2" />
@@ -322,9 +346,9 @@ const App = () => {
           <div className="flex items-center gap-2">
              <span className="text-[7px] font-black bg-white/10 px-2 py-1 rounded uppercase">{userRole === 'admin' ? 'ADMİN' : 'İZLEYİCİ'}</span>
              {userRole === 'admin' && (
-               <button onClick={() => setResetModal({ isOpen: true, password: '', error: '' })} className="p-1.5 bg-red-600/20 hover:bg-red-600 rounded-lg transition-all" title="Master Reset"><RotateCcw size={14}/></button>
+               <button onClick={() => setResetModal({ isOpen: true, password: '', error: '' })} className="p-1.5 bg-red-600/20 rounded-lg hover:bg-red-600 transition-all" title="Master Reset"><RotateCcw size={14}/></button>
              )}
-             <button onClick={handleLogout} className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-all" title="Çıkış Yap"><LogOut size={14}/></button>
+             <button onClick={handleLogout} className="p-1.5 bg-white/5 rounded-lg hover:bg-white/10" title="Çıkış Yap"><LogOut size={14}/></button>
           </div>
         </div>
       </header>
@@ -336,8 +360,30 @@ const App = () => {
           ))}
         </div>
 
-        {/* --- PROGRAM / TAKVİM GÖRÜNÜMÜ --- */}
-        {activeTab === 'Program' ? (
+        {/* --- KURALLAR BÖLÜMÜ --- */}
+        {activeTab === 'Kurallar' ? (
+          <div className="bg-white rounded-2xl p-6 border shadow-xl max-w-4xl mx-auto w-full animate-in fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-sm font-black uppercase italic flex items-center gap-2"><FileText size={16} className="text-emerald-600"/> Turnuva Kuralları</h2>
+              {userRole === 'admin' && (
+                <button onClick={handleSaveRules} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black flex items-center gap-1.5 active:scale-95 transition-all"><Save size={12}/> KAYDET</button>
+              )}
+            </div>
+            {userRole === 'admin' ? (
+              <textarea 
+                value={rules} 
+                onChange={(e) => setRules(e.target.value)} 
+                className="w-full h-96 p-4 bg-slate-50 border rounded-xl font-medium text-sm text-slate-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Kuralları buraya yazın veya yapıştırın..."
+              />
+            ) : (
+              <div className="bg-slate-50 p-4 rounded-xl border min-h-[200px] whitespace-pre-wrap text-sm text-slate-700 leading-relaxed font-medium">
+                {rules || "Kurallar henüz paylaşılmadı."}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'Program' ? (
+          /* --- PROGRAM / TAKVİM GÖRÜNÜMÜ --- */
           <div className="flex flex-col gap-4 animate-in fade-in">
              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
                 <Filter size={12} className="text-slate-400 shrink-0" />
@@ -350,14 +396,14 @@ const App = () => {
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-sm font-black uppercase italic flex items-center gap-2"><Calendar size={16} className="text-emerald-600"/> Turnuva Akışı</h2>
                   {userRole === 'admin' && (
-                    <button onClick={() => setScheduleModal({ ...scheduleModal, isOpen: true })} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black flex items-center gap-1.5 active:scale-95 transition-all"><Plus size={12}/> YENİ EKLE</button>
+                    <button onClick={() => setScheduleModal({ ...scheduleModal, isOpen: true, editId: null, time: '', label: '' })} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[9px] font-black flex items-center gap-1.5 active:scale-95 transition-all"><Plus size={12}/> YENİ EKLE</button>
                   )}
                 </div>
 
                 <div className="relative space-y-4 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
                    {(schedule || [])
                     .filter(i => scheduleFilter === 'Tümü' || i.category === scheduleFilter || (scheduleFilter === 'Genel' && i.type === 'event'))
-                    .sort((a,b) => String(a.time || "00:00").localeCompare(String(b.time || "00:00"))) // Sıralama Çökme Koruması
+                    .sort((a,b) => String(a.time || "00:00").localeCompare(String(b.time || "00:00")))
                     .map(item => (
                       <div key={item.id} className="relative pl-8 group">
                          <div className={`absolute left-0 top-1.5 w-6 h-6 rounded-full border-4 border-white shadow-sm flex items-center justify-center ${item.type === 'match' ? 'bg-emerald-500' : 'bg-slate-400'}`}>
@@ -380,27 +426,24 @@ const App = () => {
                                   )}
                                </div>
                                {userRole === 'admin' && (
-                                 <button onClick={() => removeScheduleItem(item.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-all"><Trash2 size={14}/></button>
+                                 <div className="flex gap-1">
+                                   <button onClick={() => openEditSchedule(item)} className="p-1.5 text-slate-400 hover:text-emerald-600 transition-all"><Edit3 size={14}/></button>
+                                   <button onClick={() => removeScheduleItem(item.id)} className="p-1.5 text-slate-300 hover:text-red-500 transition-all"><Trash2 size={14}/></button>
+                                 </div>
                                )}
                             </div>
                          </div>
                       </div>
                    ))}
-                   {(!schedule || schedule.length === 0) && (
-                     <p className="text-center py-10 text-[9px] font-bold text-slate-400 uppercase tracking-widest">Henüz program akışı girilmedi.</p>
-                   )}
                 </div>
              </div>
           </div>
         ) : (
-          /* --- BAĞIMSIZ TURNUVA KATEGORİSİ GÖRÜNÜMÜ --- */
+          /* --- FİKSTÜR BÖLÜMÜ --- */
           !isBracketGenerated ? (
             <div className="bg-white rounded-2xl p-6 border shadow-xl max-w-3xl mx-auto w-full animate-in fade-in">
               <div className="flex justify-between items-center mb-6">
-                <div>
-                  <h2 className="text-sm font-black uppercase italic">{activeTab} Takım Kaydı</h2>
-                  {userRole === 'guest' && <p className="text-[8px] font-black text-emerald-600 uppercase animate-pulse mt-1">Yönetici takımları hazırlıyor...</p>}
-                </div>
+                <h2 className="text-sm font-black uppercase italic">{activeTab} Takım Kaydı</h2>
                 {userRole === 'admin' && (
                   <div className="flex gap-2">
                     <button onClick={fillRandom} className="px-3 py-1.5 text-[8px] font-black bg-slate-100 rounded-lg flex items-center gap-1 uppercase hover:bg-slate-200 transition-colors"><Shuffle size={12}/> Rastgele</button>
@@ -422,9 +465,6 @@ const App = () => {
                     )}
                   </div>
                 ))}
-                {(!teams[activeTab] || teams[activeTab].length === 0) && userRole === 'guest' && (
-                   <p className="text-[9px] font-bold text-slate-400 col-span-full text-center py-4 uppercase tracking-widest">Bu kategoriye henüz takım eklenmedi.</p>
-                )}
               </div>
               {userRole === 'admin' && (
                 <button onClick={() => createCategoryBracket(activeTab)} className="w-full bg-[#064e3b] text-white font-black py-3.5 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-widest italic active:scale-95 transition-all"><Play size={16} fill="currentColor"/> {activeTab} Fikstürünü Oluştur</button>
@@ -476,12 +516,12 @@ const App = () => {
         )}
       </main>
 
-      {/* --- PROGRAM EKLEME MODAL (ADMİN) --- */}
+      {/* --- PROGRAM EKLEME/DÜZENLEME MODAL --- */}
       {scheduleModal.isOpen && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200 shadow-2xl">
              <div className="bg-[#064e3b] p-4 text-white flex justify-between items-center">
-                <h3 className="font-black uppercase text-xs italic tracking-widest">Programa Ekle</h3>
+                <h3 className="font-black uppercase text-xs italic tracking-widest">{scheduleModal.editId ? 'Kaydı Güncelle' : 'Programa Ekle'}</h3>
                 <button onClick={() => setScheduleModal({ ...scheduleModal, isOpen: false })}><X size={18}/></button>
              </div>
              <div className="p-6 space-y-4">
@@ -519,7 +559,7 @@ const App = () => {
                   <input type="text" value={scheduleModal.label} onChange={e => setScheduleModal({...scheduleModal, label: e.target.value})} className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none focus:border-emerald-500" placeholder={scheduleModal.type === 'match' ? "Örn: Takım A vs Takım B" : "Örn: Öğle Yemeği"} />
                 </div>
 
-                <button onClick={handleAddSchedule} className="w-full bg-emerald-600 text-white font-black py-3 rounded-xl text-[10px] tracking-widest uppercase shadow-lg active:scale-95 transition-all mt-2">KAYDET VE YAYINLA</button>
+                <button onClick={handleAddSchedule} className="w-full bg-emerald-600 text-white font-black py-3 rounded-xl text-[10px] tracking-widest uppercase shadow-lg active:scale-95 transition-all mt-2">{scheduleModal.editId ? 'GÜNCELLE' : 'KAYDET VE YAYINLA'}</button>
              </div>
           </div>
         </div>
@@ -580,7 +620,6 @@ const App = () => {
             <h3 className="font-black uppercase text-sm text-red-600 mb-4 tracking-widest italic">MASTER RESET</h3>
             <p className="text-[9px] font-bold text-slate-500 mb-4 uppercase">Her şeyi silmek için şifreyi (1234) girin.</p>
             <input type="password" value={resetModal.password} onChange={(e) => setResetModal({ ...resetModal, password: e.target.value })} className={`w-full text-center p-3 bg-slate-50 border-2 rounded-xl font-black text-xl mb-4 outline-none ${resetModal.error ? 'border-red-500' : 'border-slate-100 focus:border-red-600'}`} placeholder="****" />
-            {resetModal.error && <p className="text-red-600 text-[8px] font-bold uppercase mb-2">{resetModal.error}</p>}
             <div className="flex gap-2">
               <button onClick={() => setResetModal({ ...resetModal, isOpen: false, error: '' })} className="flex-1 bg-slate-100 font-black py-3 rounded-xl text-[10px] uppercase hover:bg-slate-200 transition-colors">İPTAL</button>
               <button onClick={handleGlobalReset} className="flex-1 bg-red-600 text-white font-black py-3 rounded-xl text-[10px] uppercase shadow-lg active:scale-95 transition-all">ONAYLA</button>
